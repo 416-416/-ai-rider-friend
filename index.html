@@ -1,0 +1,40 @@
+<!doctype html>
+<html lang="ja"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<meta name="theme-color" content="#101820"><link rel="manifest" href="manifest.json"><title>AI相棒</title>
+<style>
+:root{color-scheme:dark}*{box-sizing:border-box}body{margin:0;background:#101820;color:#f2f5f7;font-family:system-ui,sans-serif}
+header{padding:18px 16px;background:#17232d;position:sticky;top:0}h1{font-size:20px;margin:0}small{color:#aebbc5}
+main{max-width:760px;margin:auto;padding:14px;display:flex;flex-direction:column;gap:12px}
+#chat{min-height:48vh;display:flex;flex-direction:column;gap:10px}.msg{padding:12px 14px;border-radius:16px;max-width:90%;white-space:pre-wrap;line-height:1.5}.user{align-self:flex-end;background:#245b78}.assistant{align-self:flex-start;background:#25323d}
+.controls{display:flex;gap:8px;flex-wrap:wrap}button,input,textarea,select{font:inherit;border-radius:12px;border:1px solid #52616d;background:#1a2731;color:#fff;padding:11px}
+button{cursor:pointer}button.primary{background:#1677a8;border:0}textarea{width:100%;resize:vertical;min-height:64px}details{background:#17232d;padding:12px;border-radius:12px}details label{display:block;margin:8px 0}details input{width:100%}.entry{display:flex;gap:8px}.entry textarea{flex:1}.status{font-size:12px;color:#aebbc5}
+</style></head><body>
+<header><h1>🤝 AI相棒</h1><small>気の合う相棒と、いつでも会話</small></header>
+<main><div class="controls"><select id="persona"><option>気の合う友達</option><option>執事</option><option>明るい相棒</option><option>バイク好き</option></select><button id="mic">🎙 音声入力</button><button id="speak">🔊 読み上げ ON</button><button id="clear">履歴消去</button></div>
+<div id="chat" aria-live="polite"></div><div class="entry"><textarea id="prompt" placeholder="相棒に話しかける…"></textarea><button class="primary" id="send">送信</button></div><div class="status" id="status">AI接続設定が必要です。設定を開いてください。</div>
+<details open><summary>AI接続設定（無料のローカルAI推奨）</summary>
+<label>接続先URL（例：PC上のOllamaなら http://PCのIP:11434/v1/chat/completions）<input id="endpoint" placeholder="https://…/v1/chat/completions"></label>
+<label>モデル名<input id="model" placeholder="例：qwen2.5:3b"></label>
+<label>APIキー（不要なら空欄）<input id="key" type="password" placeholder="任意"></label>
+<p class="status">Ollamaを使う場合、PCとスマホを同じWi‑Fiに接続し、Ollama側でLAN接続とCORSを許可してください。APIキーをブラウザに保存するのは共有端末では避けてください。</p>
+<button id="save">設定を保存</button></details></main>
+<script>
+const $=id=>document.getElementById(id), chat=$('chat');
+let history=JSON.parse(localStorage.getItem('ai-companion-history')||'[]'), speakOn=true;
+function render(){chat.innerHTML='';history.forEach(m=>{let d=document.createElement('div');d.className='msg '+(m.role==='user'?'user':'assistant');d.textContent=m.content;chat.appendChild(d)});chat.scrollTop=chat.scrollHeight}
+function saveHist(){localStorage.setItem('ai-companion-history',JSON.stringify(history));render()}
+function settings(){return {endpoint:localStorage.getItem('endpoint')||'',model:localStorage.getItem('model')||'',key:localStorage.getItem('key')||''}}
+function add(role,content){history.push({role,content});saveHist()}
+async function send(){let text=$('prompt').value.trim();if(!text)return; $('prompt').value='';add('user',text);let s=settings();if(!s.endpoint||!s.model){$('status').textContent='接続先URLとモデル名を設定してください。';return}
+$('status').textContent='AIが考えています…';
+let system=`あなたは${$('persona').value}です。日本語で自然に、親しみやすく返答してください。`;
+try{let r=await fetch(s.endpoint,{method:'POST',headers:{'Content-Type':'application/json',...(s.key?{Authorization:'Bearer '+s.key}:{})},body:JSON.stringify({model:s.model,messages:[{role:'system',content:system},...history],stream:false})});if(!r.ok)throw Error('HTTP '+r.status);let data=await r.json();let answer=data.choices?.[0]?.message?.content||'返答を取得できませんでした。';add('assistant',answer);$('status').textContent='接続中';if(speakOn)speechSynthesis.speak(new SpeechSynthesisUtterance(answer))}
+catch(e){$('status').textContent='接続エラー：'+e.message+'（URL・モデル・ネットワーク設定を確認）'}}
+$('send').onclick=send;$('prompt').addEventListener('keydown',e=>{if(e.key==='Enter'&&!e.shiftKey){e.preventDefault();send()}});
+$('save').onclick=()=>{localStorage.setItem('endpoint',$('endpoint').value.trim());localStorage.setItem('model',$('model').value.trim());localStorage.setItem('key',$('key').value.trim());$('status').textContent='設定を保存しました'};
+let s=settings();$('endpoint').value=s.endpoint;$('model').value=s.model;$('key').value=s.key;
+$('speak').onclick=()=>{speakOn=!speakOn;$('speak').textContent=speakOn?'🔊 読み上げ ON':'🔇 読み上げ OFF'};
+$('clear').onclick=()=>{if(confirm('会話履歴を消去しますか？')){history=[];saveHist()}};
+$('mic').onclick=()=>{let SR=window.SpeechRecognition||window.webkitSpeechRecognition;if(!SR){$('status').textContent='このブラウザは音声入力に対応していません。';return}let rec=new SR();rec.lang='ja-JP';rec.onresult=e=>{$('prompt').value=e.results[0][0].transcript};rec.onerror=e=>$('status').textContent='音声入力エラー：'+e.error;rec.start()};
+render();if('serviceWorker'in navigator)navigator.serviceWorker.register('sw.js').catch(()=>{});
+</script></body></html>
